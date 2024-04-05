@@ -4,51 +4,115 @@ from transformers import (
     AutoModelForCausalLM,
 )
 import torch
+from torch.nn import CrossEntropyLoss
+from argparser import ArgumentParser
 
-# model_name = sys.argv[1]
-model_name = "lmsys/vicuna-13b-v1.3"
-device='cuda'
+parser = ArgumentParser()
+parser.add_argument("--output-file", require=True, type=str)
+parser.add_argument("--window", action='store_true')
+parser.add_argument("--window-with-start", action='store_true')
+args = parser.parse_args()
+
+model_name = "meta-llama/Llama-2-7b-hf"
+device = 'cuda'
+loss_function = CrossEntropyLoss()
 
 ## load model
 tokenizer = AutoTokenizer.from_pretrained(model_name,
         trust_remote_code=True,
 )
 
-with open("10146.txt", "r") as f:
-    text = f.read()
-
-encodings = tokenizer(text, return_tensors="pt")
-
-
-model = AutoModelForCausalLM.from_pretrained(model_name, device=device)
-print(model.config.model_type)
+model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto")
+print(model.config)
 model.eval()
 
 ## perplexity
-max_length = model.config.n_positions
-window = 1024
-seq_len = encodings.input_ids.size(1)
+max_length = model.config.max_position_embeddings
+print(max_length)
+with open("10146.txt", "r") as f: # first document of PG19 test set
+    text = f.read()
+encodings = tokenizer(text, return_tensors="pt")
+corpus_seq_len = encodings.input_ids.size(1)
 
-nlls = []
-prev_end_loc = 0
-for begin_loc in range(0, seq_len, window):
-    end_loc = min(begin_loc + max_length, seq_len)
-    input_ids = encodings.input_ids[:, begin_loc:end_loc].to(device)
-    target_ids = input_ids.clone()
-    target_ids[:, :-trg_len] = -100
+window = 256
 
-    with torch.no_grad():
-        outputs = model(input_ids, labels=target_ids)
+# ---- window attention ----
+if args.window:
+    f = open(args.output_file, "w")
+    past_key_values = None
+    nlls = []
+    for loc in range(0, corpus_seq_len-1):
+        input_ids = encodings.input_ids[:, loc:loc+1].to(device)
+        labels = encodings.input_ids[:, loc+1:loc+2]
+        
+        with torch.no_grad():
+            # https://huggingface.co/docs/transformers/v4.39.3/en/model_doc/llama#transformers.LlamaModel
+            outputs = model(input_ids,
+                            past_key_values = past_key_values,
+                            use_cache = True, # return past_key_values
+                            ) # type(outputs): 'transformers.modeling_outputs.CausalLMOutputWithPast'
+            
+            logits = outputs.logits.reshape(-1, model.config.vocab_size)
+            nll = loss_function(logits.detach().cpu(), labels.view(-1))
+            print(f"loc: {loc}, nll: {nll.item():.2f}, ppl: {torch.exp(nll).item():.2f}", file=f, flush=True)
 
-        # loss is calculated using CrossEntropyLoss which averages over valid labels
-        # N.B. the model only calculates loss over trg_len - 1 labels, because it internally shifts the labels
-        # to the left by 1.
-        neg_log_likelihood = outputs.loss
+            past_seq_len = outputs.past_key_values[0][0].shape[2]
+            if past_seq_len > window-1:
+                past_key_values = list()
+                # slice past_key_values
+                for k, v in outputs.past_key_values: # each tuple has 2 tensors
+                    k_slice = k[:, :, -window+1:, :]
+                    v_slice = v[:, :, -window+1:, :]
+                    past_key_values.append((k_slice, v_slice))
+            else:
+                past_key_values = outputs.past_key_values
 
-    nlls.append(neg_log_likelihood)
+            print(past_key_values[0][0].shape)
 
-    prev_end_loc = end_loc
-    if end_loc == seq_len:
-        break
+        nlls.append(nll)
+    f.close()
+    ppl = torch.exp(torch.stack(nlls).mean())
+    print(ppl)
+## ---- 4 starting tokens + window attention ----
+if args.window_with_start:
+    f = open(args.output_file, "w")
+    n_start = 4
+    past_key_values = None
+    nlls = []
+    for loc in range(0, corpus_seq_len-1):
+        input_ids = encodings.input_ids[:, loc:loc+1].to(device)
+        labels = encodings.input_ids[:, loc+1:loc+2]
+        
+        with torch.no_grad():
+            # https://huggingface.co/docs/transformers/v4.39.3/en/model_doc/llama#transformers.LlamaModel
+            outputs = model(input_ids,
+                            past_key_values = past_key_values,
+                            use_cache = True, # return past_key_values
+                            ) # type(outputs): 'transformers.modeling_outputs.CausalLMOutputWithPast'
+            
+            logits = outputs.logits.reshape(-1, model.config.vocab_size)
+            nll = loss_function(logits.detach().cpu(), labels.view(-1))
+            print(f"nll: {nll.item():.2f}, ppl: {torch.exp(nll).item():.2f}", file=f, flush=True)
 
-ppl = torch.exp(torch.stack(nlls).mean())
+            past_seq_len = outputs.past_key_values[0][0].shape[2]
+            if past_seq_len <= window-1:
+                past_key_values = outputs.past_key_values
+            else:
+                past_key_values = list()
+                # slice past_key_values
+                for k, v in outputs.past_key_values: # each tuple has 2 tensors
+                    k_slice = torch.cat((
+                        k[:, :, :n_start, :],
+                        k[:, :, -window+1+n_start:, :]
+                    ), dim=2
+                    )
+                    v_slice = torch.cat((
+                        v[:, :, :n_start, :],
+                        v[:, :, -window+1+n_start:, :]
+                    ), dim=2
+                    )
+                    past_key_values.append((k_slice, v_slice))
+        nlls.append(nll)
+    f.close()
+    ppl = torch.exp(torch.stack(nlls).mean())
+    print(ppl)
