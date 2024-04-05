@@ -5,10 +5,10 @@ from transformers import (
 )
 import torch
 from torch.nn import CrossEntropyLoss
-from argparser import ArgumentParser
+import argparse
 
-parser = ArgumentParser()
-parser.add_argument("--output-file", require=True, type=str)
+parser = argparse.ArgumentParser()
+parser.add_argument("--output-file", required=True, type=str)
 parser.add_argument("--window", action='store_true')
 parser.add_argument("--window-with-start", action='store_true')
 args = parser.parse_args()
