@@ -1,3 +1,6 @@
+*.sub
+logs/*
+10146.txt
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
