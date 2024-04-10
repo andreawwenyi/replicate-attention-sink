@@ -1,3 +1,6 @@
+"""
+This is a modified version of original modify_llama.py code to works with transformers==4.39.3
+"""
 import math
 from typing import Optional, Tuple
 

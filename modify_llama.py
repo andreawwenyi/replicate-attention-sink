@@ -1,6 +1,7 @@
 """
 This is a direct copy from original github repo mit-han-lab/streaming-llm
 url: https://github.com/mit-han-lab/streaming-llm/blob/d729b3ffc947caca63fc0f7644b7468ca2d50881/streaming_llm/pos_shift/modify_llama.py
+This code works for transformers==4.33.0
 """
 
 import math
