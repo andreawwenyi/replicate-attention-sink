@@ -29,6 +29,6 @@ g = sns.relplot(data = data[data['loc']<=3000], x='loc', y='rolling_nll', col='e
 g.set_ylabels("log(ppl)")
 g.set_titles(col_template="{col_name}")
 
-plt.savefig("figure.pdf")
+plt.savefig("images/figure.png")
 
 
