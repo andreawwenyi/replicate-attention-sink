@@ -5,17 +5,23 @@ from transformers import (
 )
 import torch
 from torch.nn import CrossEntropyLoss
+from pathlib import Path
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--output-file", required=True, type=str)
-parser.add_argument("--window", action='store_true')
-parser.add_argument("--window-with-start", action='store_true')
+parser.add_argument("--output-dir", type=str, default='tmp')
+parser.add_argument("--cache-size", type=int, default=512)
+parser.add_argument("--n-start", type=int, default=4)
+parser.add_argument("--enable-pos-shift", action='store_true')
 args = parser.parse_args()
 
 model_name = "meta-llama/Llama-2-7b-hf"
 device = 'cuda'
 loss_function = CrossEntropyLoss()
+
+## make dir
+output_dir = Path(args.output_dir)
+output_dir.mkdir(exist_ok=True, parents=True)
 
 ## load model
 tokenizer = AutoTokenizer.from_pretrained(model_name,
@@ -34,11 +40,11 @@ with open("10146.txt", "r") as f: # first document of PG19 test set
 encodings = tokenizer(text, return_tensors="pt")
 corpus_seq_len = encodings.input_ids.size(1)
 
-window = 256
+window = args.cache_size
+f = open(output_dir / "logs.txt", "w")
 
 # ---- window attention ----
-if args.window:
-    f = open(args.output_file, "w")
+if args.n_start < 1:
     past_key_values = None
     nlls = []
     for loc in range(0, corpus_seq_len-1):
@@ -67,16 +73,18 @@ if args.window:
             else:
                 past_key_values = outputs.past_key_values
 
-            print(past_key_values[0][0].shape)
-
         nlls.append(nll)
     f.close()
     ppl = torch.exp(torch.stack(nlls).mean())
-    print(ppl)
-## ---- 4 starting tokens + window attention ----
-if args.window_with_start:
-    f = open(args.output_file, "w")
-    n_start = 4
+    with open(output_dir / "ppl.txt", "w") as f:
+        f.write(f"{ppl.item()}\n")
+
+## ---- add initial tokens ----
+else:
+    if args.enable_pos_shift:
+        from modify_llama import enable_llama_pos_shift_attention
+        enable_llama_pos_shift_attention(model)
+        
     past_key_values = None
     nlls = []
     for loc in range(0, corpus_seq_len-1):
@@ -92,7 +100,7 @@ if args.window_with_start:
             
             logits = outputs.logits.reshape(-1, model.config.vocab_size)
             nll = loss_function(logits.detach().cpu(), labels.view(-1))
-            print(f"nll: {nll.item():.2f}, ppl: {torch.exp(nll).item():.2f}", file=f, flush=True)
+            print(f"loc: {loc}, nll: {nll.item():.2f}, ppl: {torch.exp(nll).item():.2f}", file=f, flush=True)
 
             past_seq_len = outputs.past_key_values[0][0].shape[2]
             if past_seq_len <= window-1:
@@ -102,17 +110,18 @@ if args.window_with_start:
                 # slice past_key_values
                 for k, v in outputs.past_key_values: # each tuple has 2 tensors
                     k_slice = torch.cat((
-                        k[:, :, :n_start, :],
-                        k[:, :, -window+1+n_start:, :]
+                        k[:, :, :args.n_start, :],
+                        k[:, :, -window+1+args.n_start:, :]
                     ), dim=2
                     )
                     v_slice = torch.cat((
-                        v[:, :, :n_start, :],
-                        v[:, :, -window+1+n_start:, :]
+                        v[:, :, :args.n_start, :],
+                        v[:, :, -window+1+args.n_start:, :]
                     ), dim=2
                     )
                     past_key_values.append((k_slice, v_slice))
         nlls.append(nll)
     f.close()
     ppl = torch.exp(torch.stack(nlls).mean())
-    print(ppl)
+    with open(output_dir / "ppl.txt", "w") as f:
+        f.write(f"{ppl.item()}\n")

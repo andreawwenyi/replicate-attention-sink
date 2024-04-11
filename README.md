@@ -5,7 +5,7 @@ Additionally, the paper mentioned the importance of modifying positional embeddi
 The original paper experimented with cache size of `1024` with `Llama-2-13b` model. Due to memory constraint, I implemented with cache size of `512` with `Llama-2-7b` model. 
 
 ## Contributions
-The [code](https://github.com/mit-han-lab/streaming-llm/blob/main/streaming_llm/pos_shift/modify_llama.py) that modifies positional embedding in the paper's original github repo is compatible with `transformers` version `4.33.1`. I modified the code (`modify_llama.py`) so it is compatible with current `transformers` version (`4.39.1`). The major differences between the two versions of `transformers` are that (1) `position_ids` changed from a Tensor object to a DynamicCache() instance and (2) The `LlamaRotaryEmbedding` class.
+The [code](https://github.com/mit-han-lab/streaming-llm/blob/main/streaming_llm/pos_shift/modify_llama.py) that modifies positional embedding in the paper's original github repo is compatible with `transformers==4.33.1`. I modified the code (`modify_llama.py`) so it is compatible with current `transformers==4.39.1`. The major differences between the two versions of `transformers` are that (1) `position_ids` changed from a Tensor object to a DynamicCache() instance and (2) The `LlamaRotaryEmbedding` class.
 
 ## Environment Setup
 ```sh
