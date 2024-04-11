@@ -33,13 +33,12 @@ print(model.config)
 model.eval()
 
 ## perplexity
-max_length = model.config.max_position_embeddings
-print(max_length)
+
 with open("10146.txt", "r") as f: # first document of PG19 test set
     text = f.read()
 encodings = tokenizer(text, return_tensors="pt")
 corpus_seq_len = encodings.input_ids.size(1)
-
+print(f"corpus length: {corpus_seq_len} tokens.")
 window = args.cache_size
 f = open(output_dir / "logs.txt", "w")
 
