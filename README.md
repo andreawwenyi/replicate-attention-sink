@@ -7,7 +7,7 @@ Due to memory constraint, I used `Llama-2-7b` model with cache size of `512`. I 
 
 I showed results from three experiments
 * (1) Window attention with 0 initial tokens (`window-attention`) has the worst perplexity (PPL=307.297).
-* (2) Adding 4 initial tokens as attention sink, but keep the original positional embedding based on positions _in the original text_ (`sink-no-pos-shift`) does not improve the perplexity as compared to window attention (PPL=). 
+* (2) Adding 4 initial tokens as attention sink, but keep the original positional embedding based on positions _in the original text_ (`sink-no-pos-shift`) does not improve the perplexity as compared to window attention (PPL=309.305). 
 * (3) Adding 4 initial tokens as attention sink, and assign the positional embedding _within cache_ (`sink-with-pos-shift`) drastically improve the perplexity (PPL=6.016). 
 
 Additionally, I plotted the perplexity for the first 3000 tokens and showed that perplexity of window attention spikes as soon as the sequence length exceeds cache size, whereas the perplexity of attention sink with modified positional embedding remains stable.
